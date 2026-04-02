@@ -1,0 +1,23 @@
+# Environment variables / Secrets
+.env
+google_api_key.txt
+cookies.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# Project Specific
+universal_analysis_temp/
+universal_reports/
+universal_video_*.mp4
+universal_audio_*.mp3
+checkpoint_dir/
+
+# OS
+.DS_Store
