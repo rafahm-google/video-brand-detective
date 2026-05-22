@@ -1,23 +1,27 @@
-# Environment variables / Secrets
-.env
-google_api_key.txt
-cookies.txt
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Virtual Environment
 venv/
-.venv/
 env/
-.env/
+.venv/
 
-# Project Specific
+# Credentials and Secrets
+.env
+scripts/.env
+cookies.txt
+scripts/cookies.txt
+google_api_key.txt
+
+# Heavy Media Bytes
+*.mp4
+*.mp3
 universal_analysis_temp/
-universal_reports/
-universal_video_*.mp4
-universal_audio_*.mp3
-checkpoint_dir/
+analysis_temp/
 
-# OS
-.DS_Store
+# Reports outputs
+universal_reports/
+output_reports_v2/
+output_reports_v3/
+
+# Python Cache
+__pycache__/
+*.pyc
+.pytest_cache/

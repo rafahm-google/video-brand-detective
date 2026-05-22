@@ -1,0 +1,6 @@
+google-genai
+pandas
+opencv-python
+Pillow
+tqdm
+python-dotenv

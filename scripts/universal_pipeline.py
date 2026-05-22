@@ -86,7 +86,7 @@ def get_video_metadata(video_url: str) -> Optional[Tuple[str, str, int, datetime
             path = Path(video_url)
             return path.stem, path.stem, 0, datetime.datetime.now()
 
-        command = ['yt-dlp', '-j', '--no-playlist', video_url]
+        command = ['yt-dlp', '--geo-bypass-country', 'BR', '--no-check-certificate', '-j', '--no-playlist', video_url]
         if Config.COOKIE_FILE_PATH and Config.COOKIE_FILE_PATH.exists(): command.extend(['--cookies', str(Config.COOKIE_FILE_PATH)])
         elif getattr(Config, 'USE_BROWSER_COOKIES', None): command.extend(['--cookies-from-browser', Config.USE_BROWSER_COOKIES])
         json_output = subprocess.check_output(command, text=True, encoding='utf-8')
@@ -118,7 +118,7 @@ def download_and_split(video_url: str, video_id: str) -> bool:
             else:
                 logging.info(f"Downloading video as '{local_video_path}'...")
                 quality = Config.STREAM_QUALITY.replace("p", "")
-                cmd = ['yt-dlp', '-f', f'bestvideo[height<={quality}]+bestaudio/best', '-S', 'vcodec:h264', '--merge-output-format', 'mp4', '-o', str(local_video_path), video_url]
+                cmd = ['yt-dlp', '--geo-bypass-country', 'BR', '--no-check-certificate', '-f', f'bestvideo[height<={quality}]+bestaudio/best', '-S', 'vcodec:h264', '--merge-output-format', 'mp4', '-o', str(local_video_path), video_url]
                 if Config.COOKIE_FILE_PATH and Config.COOKIE_FILE_PATH.exists():
                     cmd.extend(['--cookies', str(Config.COOKIE_FILE_PATH)])
                 elif getattr(Config, 'USE_BROWSER_COOKIES', None):
@@ -193,7 +193,7 @@ INSTRUÇÕES OBRIGATÓRIAS E CRÍTICAS PARA EVITAR FALSOS POSITIVOS:
 4. **TEXTO NA TELA**: Preste extrema atenção aos textos na tela que referenciam marcas.
 5. **LOCALIZAÇÃO EXATA**: Para marcas visuais, você DEVE retornar as coordenadas da bounding box no formato [ymin, xmin, ymax, xmax] com valores proporcionais de 0 a 1000, onde o canto superior esquerdo é [0,0]. (Exemplo: [450, 120, 550, 200]). Retorne os números como uma string no formato array.
 6. **TEMPO GLOBAL**: Os tempos em segundos indicados acompanhando as imagens extraídas são os tempos absolutos exatos. Para o áudio, faça a estimativa do tempo com base no tempo base deste bloco que começou no segundo ({chunk_start}s).
-7. **FORMATO JSON PURO**: Você DEVE retornar APENAS o objeto JSON e nenhuma outra palavra ou frase na sua resposta. Nenhuma justificativa fora do JSON. Quando você tiver DÚVIDA ou não ver e ouvir nenhuma marca definitiva com total clareza, retorne listas VAZIAS no output JSON, exatamente assim: `{{'visual': [], 'audio': []}}`.
+7. **FORMATO JSON PURO**: Você DEVE retornar APENAS o objeto JSON e nenhuma outra palavra ou frase na sua resposta. Nenhuma justificativa fora do JSON. Quando você tiver DÚVIDA ou não ver e ouvir nenhuma marca definitiva com total clareza, retorne listas VAZIAS no output JSON, exatamente assim: `{{"visual": [], "audio": []}}`.
 
 RETORNO ESPERADO:
 {{
@@ -289,6 +289,101 @@ RETORNO ESPERADO:
             break
         time.sleep(wait_time)
             
+    # --- Verification Layer (Option A with Batch Processing) ---
+    if visual_detections:
+        logging.info(f"Chunk {chunk_index}: Starting Batch Verification Layer for {len(visual_detections)} visual candidates...")
+        
+        # 1. Gather the union of unique frames to send
+        unique_frames_to_send = {}
+        for detect in visual_detections:
+            target_sec = detect['Segundos Totais']
+            target_seconds_list = [target_sec - 2, target_sec - 1, target_sec, target_sec + 1, target_sec + 2]
+            
+            for sec in target_seconds_list:
+                closest_frame = min(frames, key=lambda x: abs(x['seconds'] - sec), default=None)
+                if closest_frame:
+                    unique_frames_to_send[closest_frame['seconds']] = closest_frame['image']
+                    
+        # Sort frames chronologically by timestamp
+        sorted_frame_seconds = sorted(unique_frames_to_send.keys())
+        verification_frames = [{'seconds': sec, 'image': unique_frames_to_send[sec]} for sec in sorted_frame_seconds]
+        
+        if not verification_frames:
+            # Keep all candidates defensively if no frames found
+            logging.warning(f"Chunk {chunk_index}: No verification frames could be extracted. Keeping candidates defensively.")
+        else:
+            # 2. Construct the single batch verification prompt listing all candidate claims
+            claims_list_str = ""
+            for idx, detect in enumerate(visual_detections):
+                claims_list_str += f"Claim Index {idx}: Brand '{detect['Marca Identificada']}' at second {detect['Segundos Totais']} in format '{detect['Formato do Anúncio']}'\n"
+                
+            verify_prompt = f"""Você é um inspetor de qualidade ultra-rigoroso e analítico de detecção de marcas em vídeo.
+Sua missão é validar uma lista de "Deteções Candidatas" feitas por um modelo primário. Você deve verificar cada deteção individualmente com base na sequência cronológica de imagens anexadas.
+
+Lista de Deteções Candidatas a Verificar:
+{claims_list_str}
+
+Instruções Importantes de Validação:
+1. Analise os frames próximos ao segundo de cada deteção candidata para confirmar se a marca reivindicada está de fato claramente visível.
+2. Seja extremamente cético. Falsos positivos são inaceitáveis. Se você não tiver 100% de certeza absoluta de que a marca está claramente visível nos frames correspondentes àquela janela temporal, marque "verified": false.
+3. Se a marca estiver presente, verifique se o formato de anúncio está correto. Se estiver errado ou for muito genérico, forneça o formato correto em "corrected_format".
+4. Você DEVE responder APENAS com o JSON puro contendo a lista de resultados no formato estruturado abaixo. Sem introdução, sem blocos de código markdown (apenas JSON):
+
+{{
+    "verification_results": [
+        {{
+            "index": 0,  // O 'Claim Index' correspondente à deteção avaliada
+            "verified": true,  // true se a marca de fato está lá com total certeza, false caso contrário
+            "corrected_brand": "Nome da Marca",  // Manter o mesmo ou corrigir se aplicável
+            "corrected_format": "Formato do Anúncio",  // Manter o mesmo ou corrigir se aplicável
+            "confidence_explanation": "Uma breve justificativa técnica sobre sua decisão (Ex: 'Marca visível no peito da camisa no frame de X segundos')"
+        }}
+    ]
+}}
+"""
+            verify_payload = [verify_prompt]
+            for vf in verification_frames:
+                verify_payload.extend([f"FRAME AT {vf['seconds']} SECONDS:", vf['image']])
+                
+            try:
+                verify_res = client.models.generate_content(
+                    model=Config.GEMINI_MODEL,
+                    contents=verify_payload,
+                    config=types.GenerateContentConfig(
+                        safety_settings=safety_settings
+                    )
+                )
+                verify_text = verify_res.text.strip()
+                
+                verify_data = None
+                try:
+                    verify_data = json.loads(verify_text)
+                except json.JSONDecodeError:
+                    match = re.search(r'\{.*\}', verify_text, re.DOTALL)
+                    if match: verify_data = json.loads(match.group(0))
+                    
+                if verify_data and 'verification_results' in verify_data:
+                    results_map = {item.get('index'): item for item in verify_data['verification_results'] if item.get('index') is not None}
+                    
+                    verified_visual_detections = []
+                    for idx, detect in enumerate(visual_detections):
+                        result = results_map.get(idx)
+                        if result and result.get('verified') is True:
+                            detect['Marca Identificada'] = result.get('corrected_brand', detect['Marca Identificada'])
+                            detect['Formato do Anúncio'] = result.get('corrected_format', detect['Formato do Anúncio'])
+                            detect['Resumo / Contexto'] = detect['Resumo / Contexto'] + f" [Verificado: {result.get('confidence_explanation', '')}]"
+                            verified_visual_detections.append(detect)
+                            logging.info(f"Chunk {chunk_index}: Candidate '{detect['Marca Identificada']}' VERIFIED at {detect['Segundos Totais']}s. Reason: {result.get('confidence_explanation')}")
+                        else:
+                            reason = result.get('confidence_explanation', 'Flagged as false positive') if result else 'No verification result returned'
+                            logging.warning(f"Chunk {chunk_index}: Candidate '{detect['Marca Identificada']}' REJECTED at {detect['Segundos Totais']}s. Reason: {reason}")
+                            
+                    visual_detections = verified_visual_detections
+                else:
+                    logging.error(f"Chunk {chunk_index}: Bad JSON response or missing verification_results. Keeping candidates defensively.")
+            except Exception as e:
+                logging.error(f"Chunk {chunk_index}: Batch verification failed due to error: {e}. Keeping candidates defensively.")
+
     if audio_file:
         try: client.files.delete(name=audio_file.name)
         except: pass
