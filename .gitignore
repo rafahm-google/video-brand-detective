@@ -25,3 +25,22 @@ output_reports_v3/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Local Studies Data (Excluded)
+final_sheet_data.csv
+sheet_data.csv
+
+# Legacy & Backup Directories (Excluded)
+original-scripts/
+universal_brand_analyzer/
+
+# Unnecessary Script Helpers (Excluded)
+scripts/create_dummy.py
+scripts/draw_bounding_boxes.py
+scripts/dummy.txt
+scripts/meta.json
+scripts/test_genai.py
+scripts/test_timeout.py
+scripts/test_timeout2.py
+scripts/test_upload.py
+scripts/README.md
