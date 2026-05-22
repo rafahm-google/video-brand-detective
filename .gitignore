@@ -44,3 +44,6 @@ scripts/test_timeout.py
 scripts/test_timeout2.py
 scripts/test_upload.py
 scripts/README.md
+
+# Private Automation Scripts (Contains internal paths)
+run_batch_analysis.py
